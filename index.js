@@ -44,7 +44,7 @@ exports.run = async ({ processingConfig, processingId, tmpDir, axios, log, ws })
   await log.info(result)
   const mdiPath = path.join(tmpDir, 'node_modules/@mdi/svg')
   const mdiPJson = JSON.parse(await readFile(path.join(mdiPath, 'package.json')))
-  log.info(`mdi version = ${mdiPJson.version}`)
+  log.info(`version = ${mdiPJson.version}`)
 
   await log.step('Create the dataset')
   const dataset = (await axios.post('api/v1/datasets', {
@@ -69,8 +69,39 @@ exports.run = async ({ processingConfig, processingId, tmpDir, axios, log, ws })
       }
     })
   )
-  await log.task('load icons')
+  await log.info(`number of icons = ${nbIcons}`)
+
+  await log.info('prepare archive with all attachments')
+  execSync('zip svg.zip *', { cwd: path.join(mdiPath, 'svg') })
+
+  await log.task('load attachments')
+  const form = new FormData()
+  form.append('actions', JSON.stringify([]), 'actions.json')
+  form.append('attachments', createReadStream(path.join(mdiPath, 'svg/svg.zip')), 'attachments.zip')
+  await axios({
+    method: 'post',
+    url: `api/v1/datasets/${dataset.id}/_bulk_lines`,
+    data: form,
+    headers: form.getHeaders(),
+    onUploadProgress: async (progressEvent) => {
+      await log.progress('load attachments', progressEvent.loaded, progressEvent.total)
+    }
+  })
+
+  let lines = []
+  await log.task('load lines')
   let i = 0
+  const sendLines = async () => {
+    await axios({
+      method: 'post',
+      url: `api/v1/datasets/${dataset.id}/_bulk_lines`,
+      data: lines
+    })
+    i += lines.length
+    await log.progress('load lines', i, nbIcons)
+    lines = []
+  }
+
   await pipeline(
     createReadStream(path.join(mdiPath, 'meta.json')),
     JSONStream.parse('*'),
@@ -82,26 +113,26 @@ exports.run = async ({ processingConfig, processingId, tmpDir, axios, log, ws })
           const svgFilePath = path.join(tmpDir, `node_modules/@mdi/svg/svg/${chunk.name}.svg`)
           const svg = await readFile(svgFilePath, 'utf8')
           const svgPath = svg.match(/path d="(.*)"/)[1]
-
-          const form = new FormData()
-          form.append('name', chunk.name)
-          if (chunk.aliases.length) form.append('aliases', chunk.aliases.join(', '))
-          if (chunk.tags.length) form.append('tags', chunk.tags.join(', '))
-          form.append('author', chunk.author)
-          form.append('version', chunk.version)
-          form.append('pack', 'mdi')
-          form.append('packVersion', mdiPJson.version)
-          form.append('svg', svg)
-          form.append('svgPath', svgPath)
-          form.append('attachment', createReadStream(svgFilePath))
-          await axios({
-            method: 'put',
-            url: `api/v1/datasets/${dataset.id}/lines/${chunk.name}`,
-            data: form,
-            headers: form.getHeaders()
+          lines.push({
+            path: chunk.name + '.svg',
+            name: chunk.name,
+            version: chunk.version,
+            pack: 'mdi',
+            packVersion: mdiPJson.version,
+            svg,
+            svgPath,
+            aliases: chunk.aliases.join(', '),
+            tags: chunk.tags.join(', ')
           })
-          i++
-          await log.progress('load icons', i, nbIcons)
+          if (lines.length === 100) await sendLines()
+          callback()
+        } catch (err) {
+          callback(err)
+        }
+      },
+      async final (callback) {
+        try {
+          if (lines.length) await sendLines()
           callback()
         } catch (err) {
           callback(err)
