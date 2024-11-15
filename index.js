@@ -77,7 +77,6 @@ exports.run = async ({ processingConfig, processingId, tmpDir, axios, log, ws })
     new Writable({
       objectMode: true,
       async write (chunk, encoding, callback) {
-        if (i === 100) stopped = true
         if (stopped) return callback()
         try {
           const svgFilePath = path.join(tmpDir, `node_modules/@mdi/svg/svg/${chunk.name}.svg`)
