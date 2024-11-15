@@ -80,7 +80,7 @@ exports.run = async ({ processingConfig, processingId, tmpDir, axios, log, ws })
         if (i === 100) stopped = true
         if (stopped) return callback()
         try {
-          const svgFilePath = `./node_modules/@mdi/svg/svg/${chunk.name}.svg`
+          const svgFilePath = path.join(tmpDir, `node_modules/@mdi/svg/svg/${chunk.name}.svg`)
           const svg = await readFile(svgFilePath, 'utf8')
           const svgPath = svg.match(/path d="(.*)"/)[1]
 
