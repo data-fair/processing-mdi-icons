@@ -1,6 +1,6 @@
 {
   "name": "@data-fair/processing-mdi-icons",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Import Material Design Icons in a data-fair dataset.",
   "main": "index.js",
   "scripts": {
